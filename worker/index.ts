@@ -4,7 +4,7 @@ import handler from "vinext/server/app-router-entry";
 
 interface Env {
   ASSETS: Fetcher;
-  DB?: D1Database;
+  DB: D1Database;
   VIRUSTOTAL_API_KEY?: string;
   IMAGES: {
     input(stream: ReadableStream): {
@@ -20,6 +20,26 @@ interface ExecutionContext {
   passThroughOnException(): void;
 }
 
+async function sha256(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function consumeQuota(db: D1Database, scope: string, bucket: string, limit: number): Promise<{ allowed: boolean; remaining: number }> {
+  const now = Date.now();
+  await db.prepare(`
+    INSERT INTO reputation_rate_limits (scope, bucket, count, updated_at)
+    VALUES (?, ?, 1, ?)
+    ON CONFLICT(scope, bucket)
+    DO UPDATE SET count = count + 1, updated_at = excluded.updated_at
+  `).bind(scope, bucket, now).run();
+  const row = await db.prepare(
+    "SELECT count FROM reputation_rate_limits WHERE scope = ? AND bucket = ?"
+  ).bind(scope, bucket).first<{ count: number }>();
+  const count = row?.count ?? limit + 1;
+  return { allowed: count <= limit, remaining: Math.max(0, limit - count) };
+}
+
 // Image security config. SVG sources with .svg extension auto-skip the
 // optimization endpoint on the client side (served directly, no proxy).
 // To route SVGs through the optimizer (with security headers), set
@@ -31,6 +51,10 @@ const worker = {
     const url = new URL(request.url);
 
     if (url.pathname === "/api/reputation" && request.method === "GET") {
+      const fetchSite = request.headers.get("sec-fetch-site");
+      if (fetchSite && !["same-origin", "none"].includes(fetchSite)) {
+        return Response.json({ error: "cross_site_request_rejected" }, { status: 403 });
+      }
       const candidate = url.searchParams.get("url");
       if (!candidate) {
         return Response.json({ error: "missing_url" }, { status: 400 });
@@ -48,13 +72,50 @@ const worker = {
         return Response.json({ error: "reputation_service_not_configured" }, { status: 503 });
       }
 
+      const urlHash = await sha256(checkedUrl.href);
+      const now = Date.now();
+      const cached = await env.DB.prepare(
+        "SELECT payload FROM reputation_cache WHERE url_hash = ? AND expires_at > ?"
+      ).bind(urlHash, now).first<{ payload: string }>();
+      if (cached?.payload) {
+        return new Response(cached.payload, {
+          headers: { "content-type": "application/json", "cache-control": "private, max-age=300", "x-dalil-cache": "hit" },
+        });
+      }
+
+      const ip = request.headers.get("cf-connecting-ip") ?? "unknown";
+      const visitorHash = await sha256(ip);
+      const hourBucket = new Date(now).toISOString().slice(0, 13);
+      const dayBucket = new Date(now).toISOString().slice(0, 10);
+      const visitorQuota = await consumeQuota(env.DB, `visitor:${visitorHash}`, hourBucket, 5);
+      if (!visitorQuota.allowed) {
+        return Response.json({ error: "visitor_rate_limit", retry: "next_hour" }, {
+          status: 429,
+          headers: { "retry-after": "3600", "x-ratelimit-remaining": "0" },
+        });
+      }
+      const globalQuota = await consumeQuota(env.DB, "global", dayBucket, 100);
+      if (!globalQuota.allowed) {
+        return Response.json({ error: "daily_rate_limit", retry: "next_day" }, {
+          status: 429,
+          headers: { "retry-after": "86400", "x-ratelimit-remaining": "0" },
+        });
+      }
+
       const id = btoa(checkedUrl.href).replace(/=+$/g, '').replace(/\+/g, '-').replace(/\//g, '_');
       const upstream = await fetch(`https://www.virustotal.com/api/v3/urls/${id}`, {
         headers: { "x-apikey": env.VIRUSTOTAL_API_KEY, accept: "application/json" },
       });
 
       if (upstream.status === 404) {
-        return Response.json({ status: "unknown", provider: "VirusTotal", checkedAt: new Date().toISOString() });
+        const result = JSON.stringify({ status: "unknown", provider: "VirusTotal", checkedAt: new Date().toISOString() });
+        await env.DB.prepare(`
+          INSERT INTO reputation_cache (url_hash, payload, expires_at, updated_at)
+          VALUES (?, ?, ?, ?)
+          ON CONFLICT(url_hash)
+          DO UPDATE SET payload = excluded.payload, expires_at = excluded.expires_at, updated_at = excluded.updated_at
+        `).bind(urlHash, result, now + 60 * 60 * 1000, now).run();
+        return new Response(result, { headers: { "content-type": "application/json", "x-ratelimit-remaining": String(visitorQuota.remaining) } });
       }
       if (!upstream.ok) {
         return Response.json({ error: "provider_unavailable", providerStatus: upstream.status }, { status: 502 });
@@ -69,7 +130,7 @@ const worker = {
       const harmless = stats.harmless ?? 0;
       const undetected = stats.undetected ?? 0;
 
-      return Response.json({
+      const result = JSON.stringify({
         status: malicious > 0 ? "malicious" : suspicious > 0 ? "suspicious" : "no_detection",
         provider: "VirusTotal",
         stats: { malicious, suspicious, harmless, undetected },
@@ -77,7 +138,20 @@ const worker = {
           ? new Date(payload.data.attributes.last_analysis_date * 1000).toISOString()
           : null,
         checkedAt: new Date().toISOString(),
-      }, { headers: { "cache-control": "private, max-age=300" } });
+      });
+      await env.DB.prepare(`
+        INSERT INTO reputation_cache (url_hash, payload, expires_at, updated_at)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(url_hash)
+        DO UPDATE SET payload = excluded.payload, expires_at = excluded.expires_at, updated_at = excluded.updated_at
+      `).bind(urlHash, result, now + 24 * 60 * 60 * 1000, now).run();
+      ctx.waitUntil(env.DB.prepare("DELETE FROM reputation_cache WHERE expires_at <= ?").bind(now).run());
+      return new Response(result, { headers: {
+        "content-type": "application/json",
+        "cache-control": "private, max-age=300",
+        "x-dalil-cache": "miss",
+        "x-ratelimit-remaining": String(visitorQuota.remaining),
+      } });
     }
 
     if (url.pathname === "/_vinext/image") {
