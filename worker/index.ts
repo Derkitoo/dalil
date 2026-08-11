@@ -46,6 +46,80 @@ async function consumeQuota(db: D1Database, scope: string, bucket: string, limit
 // dangerouslyAllowSVG: true in next.config.js and uncomment below:
 // const imageConfig: ImageConfig = { dangerouslyAllowSVG: true };
 
+const SHORTENER_DOMAINS = new Set([
+  "bit.ly", "tinyurl.com", "t.co", "cutt.ly", "is.gd", "rb.gy",
+  "rebrand.ly", "ow.ly", "buff.ly", "ft.link", "shorturl.at"
+]);
+
+const OFFICIAL_DOMAINS = [
+  "who.int", "interpol.int", "service-public.fr", "gouv.fr",
+  "gov.sa", "moh.gov.sa", "sante.fr", "ameli.fr", "laposte.fr",
+  "caf.fr", "impots.gouv.fr", "defense.gouv.fr", "interieur.gouv.fr"
+];
+
+async function resolveRedirects(initialUrl: string): Promise<{ resolvedUrl: string; unshortened: boolean }> {
+  let currentUrl = initialUrl;
+  let unshortened = false;
+  try {
+    const parsed = new URL(initialUrl);
+    if (SHORTENER_DOMAINS.has(parsed.hostname.toLowerCase())) {
+      for (let i = 0; i < 3; i++) {
+        const res = await fetch(currentUrl, { method: "HEAD", redirect: "manual" });
+        const location = res.headers.get("location");
+        if (location && [301, 302, 303, 307, 308].includes(res.status)) {
+          currentUrl = new URL(location, currentUrl).href;
+          unshortened = true;
+        } else {
+          break;
+        }
+      }
+    }
+  } catch {}
+  return { resolvedUrl: currentUrl, unshortened };
+}
+
+function levenshteinDistance(a: string, b: string): number {
+  if (a.length === 0) return b.length;
+  if (b.length === 0) return a.length;
+  const matrix: number[][] = [];
+  for (let i = 0; i <= b.length; i++) matrix[i] = [i];
+  for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+  for (let i = 1; i <= b.length; i++) {
+    for (let j = 1; j <= a.length; j++) {
+      if (b.charAt(i - 1) === a.charAt(j - 1)) {
+        matrix[i][j] = matrix[i - 1][j - 1];
+      } else {
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j - 1] + 1,
+          Math.min(matrix[i][j - 1] + 1, matrix[i - 1][j] + 1)
+        );
+      }
+    }
+  }
+  return matrix[b.length][a.length];
+}
+
+function checkTyposquatting(hostname: string): { suspected: boolean; targetOfficialDomain?: string; isOfficial: boolean } {
+  const host = hostname.toLowerCase().replace(/^www\./, '');
+  const isOfficial = OFFICIAL_DOMAINS.some(d => host === d || host.endsWith('.' + d));
+  if (isOfficial) {
+    return { suspected: false, isOfficial: true };
+  }
+
+  for (const official of OFFICIAL_DOMAINS) {
+    const baseOfficial = official.split('.')[0];
+    const baseHost = host.split('.')[0];
+    if (baseHost.includes(baseOfficial) && baseHost !== baseOfficial) {
+      return { suspected: true, targetOfficialDomain: official, isOfficial: false };
+    }
+    const dist = levenshteinDistance(baseHost, baseOfficial);
+    if (dist > 0 && dist <= 2 && baseOfficial.length >= 4) {
+      return { suspected: true, targetOfficialDomain: official, isOfficial: false };
+    }
+  }
+  return { suspected: false, isOfficial: false };
+}
+
 const worker = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
@@ -106,13 +180,27 @@ const worker = {
         });
       }
 
-      const id = btoa(checkedUrl.href).replace(/=+$/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+      const { resolvedUrl, unshortened } = await resolveRedirects(checkedUrl.href);
+      const targetUrl = new URL(resolvedUrl);
+      const typosquatting = checkTyposquatting(targetUrl.hostname);
+
+      const id = btoa(targetUrl.href).replace(/=+$/g, '').replace(/\+/g, '-').replace(/\//g, '_');
       const upstream = await fetch(`https://www.virustotal.com/api/v3/urls/${id}`, {
         headers: { "x-apikey": apiKey, accept: "application/json" },
       });
 
       if (upstream.status === 404) {
-        const result = JSON.stringify({ status: "unknown", provider: "VirusTotal", checkedAt: new Date().toISOString() });
+        const result = JSON.stringify({
+          status: "unknown",
+          provider: "VirusTotal",
+          originalUrl: checkedUrl.href,
+          resolvedUrl: targetUrl.href,
+          unshortened,
+          domain: targetUrl.hostname,
+          typosquatting: { suspected: typosquatting.suspected, targetOfficialDomain: typosquatting.targetOfficialDomain },
+          officialMatch: typosquatting.isOfficial,
+          checkedAt: new Date().toISOString(),
+        });
         await env.DB.prepare(`
           INSERT INTO reputation_cache (url_hash, payload, expires_at, updated_at)
           VALUES (?, ?, ?, ?)
@@ -137,6 +225,12 @@ const worker = {
       const result = JSON.stringify({
         status: malicious > 0 ? "malicious" : suspicious > 0 ? "suspicious" : "no_detection",
         provider: "VirusTotal",
+        originalUrl: checkedUrl.href,
+        resolvedUrl: targetUrl.href,
+        unshortened,
+        domain: targetUrl.hostname,
+        typosquatting: { suspected: typosquatting.suspected, targetOfficialDomain: typosquatting.targetOfficialDomain },
+        officialMatch: typosquatting.isOfficial,
         stats: { malicious, suspicious, harmless, undetected },
         lastAnalysisAt: payload.data?.attributes?.last_analysis_date
           ? new Date(payload.data.attributes.last_analysis_date * 1000).toISOString()
