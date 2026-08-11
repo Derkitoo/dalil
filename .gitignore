@@ -38,3 +38,7 @@ yarn-error.log*
 /.wrangler/
 /outputs/
 /work/
+
+# The Sites Vite integration is source code required by hosted builds.
+!/build/
+!/build/sites-vite-plugin.ts
