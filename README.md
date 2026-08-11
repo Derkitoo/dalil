@@ -17,6 +17,10 @@ Assistant bilingue français–arabe pour analyser une information, identifier l
 
 Cette version est un prototype pédagogique. Elle ne réalise pas encore de vérification en direct et ne remplace pas un avis professionnel.
 
+## Roadmap
+
+Consulter la [roadmap produit](ROADMAP.md) pour les prochaines phases, les priorités et les critères de sortie.
+
 ## Publication
 
 Le workflow GitHub Pages publie automatiquement `index.html` après chaque push sur `main`.
