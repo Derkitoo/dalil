@@ -26,7 +26,7 @@ jobs:
       - name: Prepare static site
         run: |
           mkdir _site
-          cp dalil-demo.html _site/index.html
+          cp index.html _site/index.html
           touch _site/.nojekyll
       - name: Configure Pages
         uses: actions/configure-pages@v5

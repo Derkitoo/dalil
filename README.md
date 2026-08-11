@@ -5,7 +5,7 @@ Assistant bilingue français–arabe pour analyser une information, identifier l
 ## Tester l’application
 
 - Version publiée : <https://derkitoo.github.io/dalil/>
-- Version locale autonome : ouvrir `dalil-demo.html` dans un navigateur.
+- Version locale autonome : ouvrir `index.html` dans un navigateur.
 
 ## Fonctionnalités actuelles
 
@@ -19,4 +19,4 @@ Cette version est un prototype pédagogique. Elle ne réalise pas encore de vér
 
 ## Publication
 
-Le workflow GitHub Pages publie automatiquement `dalil-demo.html` après chaque push sur `main`.
+Le workflow GitHub Pages publie automatiquement `index.html` après chaque push sur `main`.
