@@ -15,6 +15,12 @@ Assistant bilingue français–arabe pour analyser une information, identifier l
 - mini-leçons interactives ;
 - progression conservée uniquement sur l’appareil.
 
+## Vérification en direct
+
+Le service serveur `GET /api/reputation?url=...` consulte le dernier rapport connu de VirusTotal sans soumettre automatiquement une nouvelle URL. La clé reste côté serveur dans `VIRUSTOTAL_API_KEY` et ne doit jamais être intégrée au JavaScript public.
+
+GitHub Pages héberge uniquement l’interface statique : l’analyse locale y reste disponible, mais la réputation en direct nécessite le déploiement du Worker avec cette variable secrète.
+
 Cette version est un prototype pédagogique. Elle ne réalise pas encore de vérification en direct et ne remplace pas un avis professionnel.
 
 ## Roadmap
