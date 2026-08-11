@@ -38,6 +38,7 @@ yarn-error.log*
 /.wrangler/
 /outputs/
 /work/
+/HANDOFF.local.md
 
 # The Sites Vite integration is source code required by hosted builds.
 !/build/

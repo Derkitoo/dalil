@@ -68,8 +68,12 @@ const worker = {
         return Response.json({ error: "invalid_url" }, { status: 400 });
       }
 
-      if (!env.VIRUSTOTAL_API_KEY) {
-        return Response.json({ error: "reputation_service_not_configured" }, { status: 503 });
+      const apiKey = env.VIRUSTOTAL_API_KEY || process.env.VIRUSTOTAL_API_KEY;
+      if (!apiKey) {
+        return Response.json({
+          error: "reputation_service_not_configured",
+          envKeys: Object.keys(env || {}),
+        }, { status: 503 });
       }
 
       const urlHash = await sha256(checkedUrl.href);
@@ -104,7 +108,7 @@ const worker = {
 
       const id = btoa(checkedUrl.href).replace(/=+$/g, '').replace(/\+/g, '-').replace(/\//g, '_');
       const upstream = await fetch(`https://www.virustotal.com/api/v3/urls/${id}`, {
-        headers: { "x-apikey": env.VIRUSTOTAL_API_KEY, accept: "application/json" },
+        headers: { "x-apikey": apiKey, accept: "application/json" },
       });
 
       if (upstream.status === 404) {
