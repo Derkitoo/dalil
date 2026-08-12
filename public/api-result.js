@@ -4,7 +4,7 @@
 function applyApiResult(data) {
   var isFr = (typeof lang !== 'undefined') ? lang === 'fr' : true;
   var d = data.domain || (isFr ? 'ce domaine' : 'هذا النطاق');
-  var title = '', verdict = '', badge = '', label = '';
+  var title = '', verdict = '', badge = '', label = '', reply = '';
 
   if (data.status === 'malicious') {
     var n = (data.stats && data.stats.malicious) || '?';
@@ -14,6 +14,9 @@ function applyApiResult(data) {
       : 'يُعلن VirusTotal أن النطاق « ' + d + ' » ضار (' + n + ' محرك). لا تفتح هذا الرابط ولا تشارك أي بيانات.';
     badge  = isFr ? '🔴<br>Danger' : '🔴<br>خطر';
     label  = '● VirusTotal Live';
+    reply  = isFr
+      ? 'Attention : le lien « ' + d + ' » a été identifié comme malveillant par VirusTotal (' + n + ' moteur(s)). Ne clique pas et ne partage aucun code !'
+      : 'تنبيه: تم تأكيد أن الرابط « ' + d + ' » ضار عبر فحص VirusTotal (' + n + ' محرك). لا تضغط عليه ولا ترسل أي رمز!';
 
   } else if (data.status === 'suspicious') {
     var n = (data.stats && data.stats.suspicious) || '?';
@@ -23,6 +26,9 @@ function applyApiResult(data) {
       : '« ' + d + ' » مشبوه وفق ' + n + ' محرك(ات) VirusTotal. تجنّب الضغط عليه.';
     badge  = isFr ? '🟡<br>Suspect' : '🟡<br>مشبوه';
     label  = '● VirusTotal Live';
+    reply  = isFr
+      ? 'Attention : le domaine « ' + d + ' » est signalé comme suspect. Prudence, ne saisis aucun identifiant sur ce site.'
+      : 'تنبيه: النطاق « ' + d + ' » مصنف كمشبوه. كن حذرًا ولا تدخل أي بيانات.';
 
   } else if (data.typosquatting && data.typosquatting.suspected) {
     var t = data.typosquatting.targetOfficialDomain;
@@ -32,6 +38,9 @@ function applyApiResult(data) {
       : 'النطاق « ' + d + ' » يُقلّد الموقع الرسمي « ' + t + ' ». تقنية تصيّد — لا تُدخل أي بيانات على هذا الموقع.';
     badge  = isFr ? '🔴<br>Danger' : '🔴<br>خطر';
     label  = isFr ? '● Usurpation détectée' : '● انتحال مكتشف';
+    reply  = isFr
+      ? 'Attention : le lien « ' + d + ' » imite le site officiel « ' + t + ' ». C\'est un faux site ! Ne clique pas et ne partage aucun code.'
+      : 'تنبيه: الرابط « ' + d + ' » يقلد الموقع الرسمي « ' + t + ' ». هذا موقع مزيف! لا تضغط عليه ولا ترسل أي رمز.';
 
   } else if (data.status === 'no_detection') {
     title  = isFr ? '✅ Aucun signal d\'alerte' : '✅ لا إنذارات';
@@ -44,7 +53,6 @@ function applyApiResult(data) {
   } else {
     // No data or unknown status — keep local analysis label
     label = isFr ? '● Analyse locale' : '● تحليل محلي';
-    // Don't overwrite title/verdict/badge — keep the local analysis result visible
     document.querySelector('#resultLabel').textContent = label;
     return;
   }
@@ -53,4 +61,7 @@ function applyApiResult(data) {
   document.querySelector('#verdict').textContent = verdict;
   document.querySelector('#confidence').innerHTML = badge;
   document.querySelector('#resultLabel').textContent = label;
+  if (reply && document.querySelector('#replyText')) {
+    document.querySelector('#replyText').textContent = reply;
+  }
 }
