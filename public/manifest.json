@@ -1,0 +1,18 @@
+{
+  "name": "Dalil | دليل — Vérificateur d'Arnaques",
+  "short_name": "Dalil",
+  "description": "Transformez un message douteux en enquête structurée et développez vos réflexes cyber-prudence.",
+  "start_url": "/dalil-demo.html",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#f9f8f3",
+  "theme_color": "#2c5e3b",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%232c5e3b'/><text x='50' y='65' font-size='50' text-anchor='middle' fill='%23ffffff'>◉</text></svg>",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
