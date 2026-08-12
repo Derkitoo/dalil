@@ -261,6 +261,47 @@ const worker = {
       } });
     }
 
+    if (url.pathname === "/api/reports" && request.method === "POST") {
+      const fetchSite = request.headers.get("sec-fetch-site");
+      if (fetchSite && !["same-origin", "none"].includes(fetchSite)) {
+        return Response.json({ error: "cross_site_request_rejected" }, { status: 403 });
+      }
+      try {
+        const body = await request.json() as { text?: string; domain?: string; category?: string };
+        if (!body.text || body.text.trim().length < 5) {
+          return Response.json({ error: "invalid_report_text" }, { status: 400 });
+        }
+        const ip = request.headers.get("cf-connecting-ip") ?? "unknown";
+        const visitorHash = await sha256(ip);
+        const hourBucket = new Date().toISOString().slice(0, 13);
+        const quota = await consumeQuota(env.DB, `report:${visitorHash}`, hourBucket, 5);
+        if (!quota.allowed) {
+          return Response.json({ error: "report_rate_limit" }, { status: 429 });
+        }
+        const now = Date.now();
+        await env.DB.prepare(`
+          INSERT INTO scam_reports (text, domain, category, created_at, ip_hash)
+          VALUES (?, ?, ?, ?, ?)
+        `).bind(body.text.slice(0, 500), body.domain || "", body.category || "scam", now, visitorHash).run();
+        return Response.json({ success: true, message: "report_submitted" });
+      } catch (err) {
+        return Response.json({ error: "report_processing_failed" }, { status: 500 });
+      }
+    }
+
+    if (url.pathname === "/api/reports/check" && request.method === "GET") {
+      const domain = url.searchParams.get("domain");
+      if (!domain) return Response.json({ reportCount: 0 });
+      try {
+        const row = await env.DB.prepare(
+          "SELECT COUNT(*) as count FROM scam_reports WHERE domain = ?"
+        ).bind(domain.toLowerCase()).first<{ count: number }>();
+        return Response.json({ domain, reportCount: row?.count ?? 0 });
+      } catch {
+        return Response.json({ domain, reportCount: 0 });
+      }
+    }
+
     if (url.pathname === "/_vinext/image") {
       const allowedWidths = [...DEFAULT_DEVICE_SIZES, ...DEFAULT_IMAGE_SIZES];
       return handleImageOptimization(request, {
