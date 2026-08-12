@@ -40,12 +40,6 @@ async function consumeQuota(db: D1Database, scope: string, bucket: string, limit
   return { allowed: count <= limit, remaining: Math.max(0, limit - count) };
 }
 
-// Image security config. SVG sources with .svg extension auto-skip the
-// optimization endpoint on the client side (served directly, no proxy).
-// To route SVGs through the optimizer (with security headers), set
-// dangerouslyAllowSVG: true in next.config.js and uncomment below:
-// const imageConfig: ImageConfig = { dangerouslyAllowSVG: true };
-
 const SHORTENER_DOMAINS = new Set([
   "bit.ly", "tinyurl.com", "t.co", "cutt.ly", "is.gd", "rb.gy",
   "rebrand.ly", "ow.ly", "buff.ly", "ft.link", "shorturl.at"
@@ -54,7 +48,9 @@ const SHORTENER_DOMAINS = new Set([
 const OFFICIAL_DOMAINS = [
   "who.int", "interpol.int", "service-public.fr", "gouv.fr",
   "gov.sa", "moh.gov.sa", "sante.fr", "ameli.fr", "laposte.fr",
-  "caf.fr", "impots.gouv.fr", "defense.gouv.fr", "interieur.gouv.fr"
+  "caf.fr", "impots.gouv.fr", "defense.gouv.fr", "interieur.gouv.fr",
+  "mondialrelay.fr", "chronopost.fr", "colissimo.fr", "dpd.fr",
+  "credit-agricole.fr", "societegenerale.fr", "bnp-paribas.fr", "labanquepostale.fr"
 ];
 
 async function resolveRedirects(initialUrl: string): Promise<{ resolvedUrl: string; unshortened: boolean }> {
@@ -109,6 +105,13 @@ function checkTyposquatting(hostname: string): { suspected: boolean; targetOffic
   for (const official of OFFICIAL_DOMAINS) {
     const baseOfficial = official.split('.')[0];
     const baseHost = host.split('.')[0];
+
+    // Catch brand names embedded inside fake domains (e.g. "portail-mondial.com" -> "mondialrelay.fr")
+    const brandKeyword = baseOfficial.replace(/relay|post|fr$/, '');
+    if (brandKeyword.length >= 4 && baseHost.includes(brandKeyword)) {
+      return { suspected: true, targetOfficialDomain: official, isOfficial: false };
+    }
+
     if (baseHost.includes(baseOfficial) && baseHost !== baseOfficial) {
       return { suspected: true, targetOfficialDomain: official, isOfficial: false };
     }
