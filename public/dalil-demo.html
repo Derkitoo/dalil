@@ -28,6 +28,84 @@ function translate(next){lang=next;localStorage.setItem('dalil-language',lang);d
 function inspectLinks(text){let e=extra[lang],found=text.match(/(?:https?:\/\/|www\.)[^\s<>"']+/gi)||[];found=[...new Set(found.map(x=>x.replace(/[),.;!?،؛]+$/,'')))];if(!found.length){$('#linkList').innerHTML=`<p class="note">${e.noLink}</p>`;return 0}let totalRisk=0;$('#linkList').innerHTML=found.map(raw=>{try{let value=/^https?:/i.test(raw)?raw:'https://'+raw,url=new URL(value),host=url.hostname.toLowerCase(),flags=[],official=officialDomains.some(d=>host===d||host.endsWith('.'+d));if(url.protocol==='http:'){flags.push([e.http,'risk']);totalRisk++}else flags.push([e.https,'safe']);if(/^\d{1,3}(\.\d{1,3}){3}$/.test(host)){flags.push([e.ip,'risk']);totalRisk++}if(host.includes('xn--')){flags.push([e.puny,'risk']);totalRisk++}if(shorteners.includes(host)){flags.push([e.short,'risk']);totalRisk++}if(raw.includes('@')){flags.push([e.at,'risk']);totalRisk++}if(host.length>35){flags.push([e.long,'risk']);totalRisk++}flags.push([official?e.official:e.unknown,official?'safe':'']);return `<div class="urlrow"><div class="domain">${host}</div><div class="badges">${flags.map(f=>`<span class="badge ${f[1]}">${f[0]}</span>`).join('')}</div></div>`}catch{return ''}}).join('');return totalRisk}
 function render(key){active=key;let s=cases[key][lang],t=ui[lang],e=extra[lang];$('#resultTitle').textContent=s.title;$('#verdict').textContent=s.verdict;$('#knownText').textContent=s.facts[0];$('#riskText').textContent=s.facts[1];$('#missingText').textContent=s.facts[2];$('#question').textContent=s.question;['#choice1','#choice2','#choice3'].forEach((id,i)=>$(id).textContent=s.choices[i]);$('#sourceList').innerHTML=s.sources.map(x=>`<div class="source"><div><strong>${x[0]}</strong><br><small>${x[2]}</small></div><a target="_blank" rel="noopener" href="${x[1]}">${t.open} ↗</a></div>`).join('');let risks=inspectLinks(claim.value);$('#replyText').textContent=(key==='scam'||risks>0)?e.replyRisk:e.replySafe;$('#copyReply').textContent=e.copy}
 function firstLink(text){if(text)text=text.replace(/(https?:\/\/[^\s<>'"\n]+)-\s*[\r\n]+\s*([a-zA-Z0-9\-]+\.[a-zA-Z]{2,})/gi,'$1$2').replace(/(https?:\/\/[^\s<>'"\n]+)\s*[\r\n]+\s*([a-zA-Z0-9\-]+\.[a-zA-Z]{2,})/gi,'$1/$2');let found=text.match(/(?:https?:\/\/|www\.)[^\s<>"']+/i);if(!found)return null;let raw=found[0].replace(/[),.;!?،؛]+$/,'');return /^https?:/i.test(raw)?raw:'https://'+raw}
+// api-result.js — Dynamic verdict updater driven by VirusTotal / typosquatting API data
+// Called by checkLive() after each API response and by translate() on language switch.
+
+function applyApiResult(data) {
+  var isFr = (typeof lang !== 'undefined') ? lang === 'fr' : true;
+  var d = data.domain || (isFr ? 'ce domaine' : 'هذا النطاق');
+  var title = '', verdict = '', badge = '', label = '', reply = '';
+
+  // Typosquatting / Usurpation takes precedence over VirusTotal status
+  if (data.typosquatting && data.typosquatting.suspected) {
+    var t = data.typosquatting.targetOfficialDomain;
+    title  = isFr ? '🚨 Usurpation d\'identité détectée' : '🚨 انتحال هوية مكتشف';
+    verdict = isFr
+      ? 'Le domaine « ' + d + ' » imite le site officiel « ' + t + ' ». Technique classique de phishing — n\'entrez aucun identifiant sur ce site.'
+      : 'النطاق « ' + d + ' » يُقلّد الموقع الرسمي « ' + t + ' ». تقنية تصيّد — لا تُدخل أي بيانات على هذا الموقع.';
+    badge  = isFr ? '🔴<br>Danger' : '🔴<br>خطر';
+    label  = isFr ? '● Usurpation détectée' : '● انتحال مكتشف';
+    reply  = isFr
+      ? 'Attention : le lien « ' + d + ' » imite le site officiel « ' + t + ' ». C\'est un faux site ! Ne clique pas et ne partage aucun code.'
+      : 'تنبيه: الرابط « ' + d + ' » يقلد الموقع الرسمي « ' + t + ' ». هذا موقع مزيف! لا تضغط عليه ولا ترسل أي رمز.';
+
+    // Update urlrow pill badge directly
+    var badgeEls = document.querySelectorAll('.badges .badge');
+    badgeEls.forEach(function(el) {
+      if (el.textContent.includes('Domaine non reconnu') || el.textContent.includes('نطاق غير معروف')) {
+        el.className = 'badge risk';
+        el.textContent = isFr ? '⚠️ Usurpation : imite ' + t : '⚠️ انتحال : يقلد ' + t;
+      }
+    });
+
+  } else if (data.status === 'malicious') {
+    var n = (data.stats && data.stats.malicious) || '?';
+    title  = isFr ? '🚨 Lien malveillant confirmé' : '🚨 رابط ضار مؤكد';
+    verdict = isFr
+      ? 'VirusTotal signale le domaine « ' + d + ' » comme malveillant (' + n + ' moteur(s) de détection). N\'ouvrez pas ce lien et ne partagez aucune donnée personnelle.'
+      : 'يُعلن VirusTotal أن النطاق « ' + d + ' » ضار (' + n + ' محرك). لا تفتح هذا الرابط ولا تشارك أي بيانات.';
+    badge  = isFr ? '🔴<br>Danger' : '🔴<br>خطر';
+    label  = '● VirusTotal Live';
+    reply  = isFr
+      ? 'Attention : le lien « ' + d + ' » a été identifié comme malveillant par VirusTotal (' + n + ' moteur(s)). Ne clique pas et ne partage aucun code !'
+      : 'تنبيه: تم تأكيد أن الرابط « ' + d + ' » ضار عبر فحص VirusTotal (' + n + ' محرك). لا تضغط عليه ولا ترسل أي رمز!';
+
+  } else if (data.status === 'suspicious') {
+    var n = (data.stats && data.stats.suspicious) || '?';
+    title  = isFr ? '⚠️ Lien suspect' : '⚠️ رابط مشبوه';
+    verdict = isFr
+      ? '« ' + d + ' » est signalé suspect par ' + n + ' moteur(s) VirusTotal. Évitez de cliquer et vérifiez l\'expéditeur par une autre voie.'
+      : '« ' + d + ' » مشبوه وفق ' + n + ' محرك(ات) VirusTotal. تجنّب الضغط عليه.';
+    badge  = isFr ? '🟡<br>Suspect' : '🟡<br>مشبوه';
+    label  = '● VirusTotal Live';
+    reply  = isFr
+      ? 'Attention : le domaine « ' + d + ' » est signalé comme suspect. Prudence, ne saisis aucun identifiant sur ce site.'
+      : 'تنبيه: النطاق « ' + d + ' » مصنف كمشبوه. كن حذرًا ولا تدخل أي بيانات.';
+
+  } else if (data.status === 'no_detection') {
+    title  = isFr ? '✅ Aucun signal d\'alerte' : '✅ لا إنذارات';
+    verdict = isFr
+      ? 'VirusTotal ne détecte rien de malveillant sur le domaine « ' + d + ' ». Restez vigilant : l\'absence de détection ne garantit pas la sécurité.'
+      : 'لا يكشف VirusTotal شيئًا ضارًا على النطاق « ' + d + ' ». الغياب لا يضمن الأمان — ابقَ حذرًا.';
+    badge  = isFr ? '🟢<br>Propre' : '🟢<br>نظيف';
+    label  = '● VirusTotal Live';
+
+  } else {
+    // No data or unknown status — keep local analysis label
+    label = isFr ? '● Analyse locale' : '● تحليل محلي';
+    document.querySelector('#resultLabel').textContent = label;
+    return;
+  }
+
+  document.querySelector('#resultTitle').textContent = title;
+  document.querySelector('#verdict').textContent = verdict;
+  document.querySelector('#confidence').innerHTML = badge;
+  document.querySelector('#resultLabel').textContent = label;
+  if (reply && document.querySelector('#replyText')) {
+    document.querySelector('#replyText').textContent = reply;
+  }
+}
+
 async function checkLive(candidate){let box=$('#liveStatus');if(!candidate){box.className='live';box.textContent=lang==='ar'?'أضف رابطًا لإجراء فحص مباشر.':'Ajoute un lien pour lancer la vérification en direct.';return}box.className='live checking';box.textContent=lang==='ar'?'جارٍ سؤال خدمة السمعة…':'Consultation du service de réputation…';try{let response=await fetch('/api/reputation?url='+encodeURIComponent(candidate),{headers:{accept:'application/json'}});if(!response.ok)throw new Error('unavailable');let data=await response.json();apiData=data;if(typeof applyApiResult==='function')applyApiResult(data);let lines=[];if(data.unshortened&&data.resolvedUrl){lines.push(lang==='ar'?`🔗 تم فك الرابط المختصر: ${data.resolvedUrl}`:`🔗 Lien raccourci déplié : ${data.resolvedUrl}`)}if(data.typosquatting&&data.typosquatting.suspected){lines.push(lang==='ar'?`⚠️ تنبيه انتحال: هذا النطاق (${data.domain}) يقلد الموقع الرسمي (${data.typosquatting.targetOfficialDomain})`:`⚠️ Alerte Usurpation : ce domaine (${data.domain}) imite le site officiel ${data.typosquatting.targetOfficialDomain}`)}if(data.status==='malicious'||data.status==='suspicious'){box.className='live danger';lines.push(lang==='ar'?`تحذير VirusTotal: ${data.stats.malicious} كشف ضار و${data.stats.suspicious} مشبوه.`:`Alerte VirusTotal : ${data.stats.malicious} moteur(s) malveillant(s), ${data.stats.suspicious} suspect(s).`)}else if(data.status==='no_detection'){box.className=lines.some(l=>l.includes('⚠️'))?'live danger':'live good';lines.push(lang==='ar'?'لم يسجل VirusTotal أي كشف في آخر تحليل. هذا لا يضمن أن الرابط آمن.':'Aucune détection lors de la dernière analyse VirusTotal. Cela ne garantit pas que le lien soit sûr.')}else{box.className='live';lines.push(lang==='ar'?'لا يوجد تحليل سابق لهذا الرابط لدى VirusTotal.':'VirusTotal ne possède pas encore d’analyse pour ce lien.')}box.innerText=lines.join('\n\n')}catch{box.className='live';box.textContent=lang==='ar'?'الفحص المباشر غير متاح؛ التحليل المحلي فقط.':'Vérification en direct indisponible ; analyse locale uniquement.'}}
 function handleFeedback(val){$('#fbMsg').textContent=ui[lang].fbThanks;let fbHistory=JSON.parse(localStorage.getItem('dalil-feedback')||'[]');fbHistory.push({val,claim:claim.value.slice(0,100),date:Date.now()});localStorage.setItem('dalil-feedback',JSON.stringify(fbHistory))}
 $('#fbUseful').onclick=()=>handleFeedback('useful');$('#fbIncorrect').onclick=()=>handleFeedback('incorrect');$('#fbUncertain').onclick=()=>handleFeedback('uncertain');
