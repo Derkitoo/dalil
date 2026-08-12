@@ -6,7 +6,29 @@ function applyApiResult(data) {
   var d = data.domain || (isFr ? 'ce domaine' : 'هذا النطاق');
   var title = '', verdict = '', badge = '', label = '', reply = '';
 
-  if (data.status === 'malicious') {
+  // Typosquatting / Usurpation takes precedence over VirusTotal status
+  if (data.typosquatting && data.typosquatting.suspected) {
+    var t = data.typosquatting.targetOfficialDomain;
+    title  = isFr ? '🚨 Usurpation d\'identité détectée' : '🚨 انتحال هوية مكتشف';
+    verdict = isFr
+      ? 'Le domaine « ' + d + ' » imite le site officiel « ' + t + ' ». Technique classique de phishing — n\'entrez aucun identifiant sur ce site.'
+      : 'النطاق « ' + d + ' » يُقلّد الموقع الرسمي « ' + t + ' ». تقنية تصيّد — لا تُدخل أي بيانات على هذا الموقع.';
+    badge  = isFr ? '🔴<br>Danger' : '🔴<br>خطر';
+    label  = isFr ? '● Usurpation détectée' : '● انتحال مكتشف';
+    reply  = isFr
+      ? 'Attention : le lien « ' + d + ' » imite le site officiel « ' + t + ' ». C\'est un faux site ! Ne clique pas et ne partage aucun code.'
+      : 'تنبيه: الرابط « ' + d + ' » يقلد الموقع الرسمي « ' + t + ' ». هذا موقع مزيف! لا تضغط عليه ولا ترسل أي رمز.';
+
+    // Update urlrow pill badge directly
+    var badgeEls = document.querySelectorAll('.badges .badge');
+    badgeEls.forEach(function(el) {
+      if (el.textContent.includes('Domaine non reconnu') || el.textContent.includes('نطاق غير معروف')) {
+        el.className = 'badge risk';
+        el.textContent = isFr ? '⚠️ Usurpation : imite ' + t : '⚠️ انتحال : يقلد ' + t;
+      }
+    });
+
+  } else if (data.status === 'malicious') {
     var n = (data.stats && data.stats.malicious) || '?';
     title  = isFr ? '🚨 Lien malveillant confirmé' : '🚨 رابط ضار مؤكد';
     verdict = isFr
@@ -29,18 +51,6 @@ function applyApiResult(data) {
     reply  = isFr
       ? 'Attention : le domaine « ' + d + ' » est signalé comme suspect. Prudence, ne saisis aucun identifiant sur ce site.'
       : 'تنبيه: النطاق « ' + d + ' » مصنف كمشبوه. كن حذرًا ولا تدخل أي بيانات.';
-
-  } else if (data.typosquatting && data.typosquatting.suspected) {
-    var t = data.typosquatting.targetOfficialDomain;
-    title  = isFr ? '🚨 Usurpation d\'identité détectée' : '🚨 انتحال هوية مكتشف';
-    verdict = isFr
-      ? 'Le domaine « ' + d + ' » imite le site officiel « ' + t + ' ». Technique classique de phishing — n\'entrez aucun identifiant sur ce site.'
-      : 'النطاق « ' + d + ' » يُقلّد الموقع الرسمي « ' + t + ' ». تقنية تصيّد — لا تُدخل أي بيانات على هذا الموقع.';
-    badge  = isFr ? '🔴<br>Danger' : '🔴<br>خطر';
-    label  = isFr ? '● Usurpation détectée' : '● انتحال مكتشف';
-    reply  = isFr
-      ? 'Attention : le lien « ' + d + ' » imite le site officiel « ' + t + ' ». C\'est un faux site ! Ne clique pas et ne partage aucun code.'
-      : 'تنبيه: الرابط « ' + d + ' » يقلد الموقع الرسمي « ' + t + ' ». هذا موقع مزيف! لا تضغط عليه ولا ترسل أي رمز.';
 
   } else if (data.status === 'no_detection') {
     title  = isFr ? '✅ Aucun signal d\'alerte' : '✅ لا إنذارات';
