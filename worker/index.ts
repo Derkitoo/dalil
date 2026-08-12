@@ -106,7 +106,6 @@ function checkTyposquatting(hostname: string): { suspected: boolean; targetOffic
     const baseOfficial = official.split('.')[0];
     const baseHost = host.split('.')[0];
 
-    // Catch brand names embedded inside fake domains (e.g. "portail-mondial.com" -> "mondialrelay.fr")
     const brandKeyword = baseOfficial.replace(/relay|post|fr$/, '');
     if (brandKeyword.length >= 4 && baseHost.includes(brandKeyword)) {
       return { suspected: true, targetOfficialDomain: official, isOfficial: false };
@@ -159,9 +158,16 @@ const worker = {
         "SELECT payload FROM reputation_cache WHERE url_hash = ? AND expires_at > ?"
       ).bind(urlHash, now).first<{ payload: string }>();
       if (cached?.payload) {
-        return new Response(cached.payload, {
-          headers: { "content-type": "application/json", "cache-control": "private, max-age=300", "x-dalil-cache": "hit" },
-        });
+        try {
+          const parsed = JSON.parse(cached.payload);
+          const targetUrl = new URL(parsed.resolvedUrl || parsed.originalUrl || checkedUrl.href);
+          const typosquatting = checkTyposquatting(targetUrl.hostname);
+          parsed.typosquatting = { suspected: typosquatting.suspected, targetOfficialDomain: typosquatting.targetOfficialDomain };
+          parsed.officialMatch = typosquatting.isOfficial;
+          return Response.json(parsed, {
+            headers: { "content-type": "application/json", "cache-control": "private, max-age=300", "x-dalil-cache": "hit" },
+          });
+        } catch {}
       }
 
       const ip = request.headers.get("cf-connecting-ip") ?? "unknown";
