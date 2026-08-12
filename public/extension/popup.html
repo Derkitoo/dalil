@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Dalil Enterprise</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; width: 360px; margin: 0; padding: 16px; background: #f9f8f3; color: #2c3e2e; }
+    h2 { font-size: 16px; margin: 0 0 8px 0; color: #2c5e3b; display: flex; align-items: center; justify-content: space-between; }
+    textarea { width: 100%; box-sizing: border-box; height: 80px; font-size: 12px; padding: 8px; border: 1px solid #d0c9b6; border-radius: 4px; resize: vertical; }
+    button { background: #2c5e3b; color: #fff; border: none; padding: 8px 14px; font-weight: bold; border-radius: 4px; cursor: pointer; width: 100%; margin-top: 8px; }
+    button:hover { background: #224a2e; }
+    #result { margin-top: 12px; padding: 10px; background: #fff; border: 1px solid #d0c9b6; border-radius: 4px; display: none; }
+    .badge-danger { color: #d9534f; font-weight: bold; }
+    .badge-safe { color: #2c5e3b; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <h2>◉ Dalil Enterprise <span style="font-size: 11px; background: #2c5e3b; color: white; padding: 2px 6px; border-radius: 10px;">B2B Plugin</span></h2>
+  <p style="font-size: 12px; color: #555; margin-top: 0;">Collez le texte ou l'URL de l'email suspect pour vérification instantanée :</p>
+  <textarea id="emailContent" placeholder="Collez l'email ou le lien suspect..."></textarea>
+  <button id="btnCheck">🔍 Analyser l'email</button>
+  <div id="result">
+    <div id="resTitle" style="font-size: 13px; font-weight: bold;"></div>
+    <div id="resDesc" style="font-size: 12px; margin-top: 6px; color: #555;"></div>
+  </div>
+
+  <script>
+    document.getElementById('btnCheck').onclick = async function() {
+      var text = document.getElementById('emailContent').value.trim();
+      if (!text) return;
+      var resBox = document.getElementById('result');
+      var title = document.getElementById('resTitle');
+      var desc = document.getElementById('resDesc');
+      resBox.style.display = 'block';
+      title.textContent = '⏳ Analyse en cours...';
+      desc.textContent = '';
+
+      var found = text.match(/(?:https?:\/\/|www\.)[^\s<>"']+/i);
+      var link = found ? (found[0].startsWith('http') ? found[0] : 'https://' + found[0]) : '';
+      
+      if (!link) {
+        title.innerHTML = '⚠️ Vérification de forme';
+        desc.textContent = 'Aucune URL directe détectée. Assurez-vous que l\'expéditeur correspond bien au domaine officiel de votre entreprise.';
+        return;
+      }
+
+      try {
+        var res = await fetch('https://dalil.laradjane.workers.dev/api/reputation?url=' + encodeURIComponent(link));
+        var data = await res.json();
+        if (data.typosquatting && data.typosquatting.suspected) {
+          title.className = 'badge-danger';
+          title.textContent = '🚨 Usurpation d\'identité détectée !';
+          desc.textContent = 'Le domaine « ' + data.domain + ' » imite le site officiel « ' + data.typosquatting.targetOfficialDomain + ' ». Ne cliquez pas !';
+        } else if (data.status === 'malicious') {
+          title.className = 'badge-danger';
+          title.textContent = '🚨 Lien malveillant confirmé par VirusTotal !';
+          desc.textContent = 'Signalé dangereux par ' + (data.stats ? data.stats.malicious : 'plusieurs') + ' moteurs de sécurité.';
+        } else {
+          title.className = 'badge-safe';
+          title.textContent = '✅ Analyse de réputation effectuée';
+          desc.textContent = 'Domaine : ' + data.domain + '. Restez vigilant avant de saisir des identifiants.';
+        }
+      } catch(e) {
+        title.textContent = '⚠️ Service momentanément indisponible';
+        desc.textContent = 'Vérifiez directement auprès de votre équipe IT / RSSI.';
+      }
+    };
+  </script>
+</body>
+</html>

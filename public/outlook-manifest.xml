@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OfficeApp 
+  xmlns="http://schemas.microsoft.com/office/appforoffice/1.1"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0"
+  xmlns:mail="http://schemas.microsoft.com/office/mailappversionoverrides/1.0"
+  xsi:type="MailApp">
+  
+  <Id>d1e4d57d-6b01-499b-820c-1ddca6b7b430</Id>
+  <Version>1.0.0.0</Version>
+  <ProviderName>Dalil Cyber Security</ProviderName>
+  <DefaultLocale>fr-FR</DefaultLocale>
+  <DisplayName DefaultValue="Dalil — Assistant Anti-Phishing Enterprise" />
+  <Description DefaultValue="Vérifiez la sécurité des emails et déjouez les tentatives de phishing et fraude au président en 1 clic." />
+  <IconUrl DefaultValue="https://dalil.laradjane.workers.dev/icon.png" />
+  <HighResolutionIconUrl DefaultValue="https://dalil.laradjane.workers.dev/icon-hi.png" />
+  <SupportUrl DefaultValue="https://dalil.laradjane.workers.dev" />
+
+  <Hosts>
+    <Host Name="MailHost" />
+  </Hosts>
+
+  <Requirements>
+    <Sets>
+      <Set Name="Mailbox" MinVersion="1.3" />
+    </Sets>
+  </Requirements>
+
+  <FormSettings>
+    <Form xsi:type="ItemRead">
+      <Desktop>
+        <SourceLocation DefaultValue="https://dalil.laradjane.workers.dev/dalil-demo.html" />
+      </Desktop>
+    </Form>
+  </FormSettings>
+
+  <Permissions>ReadItem</Permissions>
+  <Rule xsi:type="RuleCollection" Mode="Or">
+    <Rule xsi:type="ItemIs" ItemType="Message" FormType="Read" />
+  </Rule>
+  <DisableEntityHighlighting>false</DisableEntityHighlighting>
+</OfficeApp>

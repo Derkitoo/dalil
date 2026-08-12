@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "Dalil Enterprise — Anti-Phishing Assistant",
+  "version": "1.0.0",
+  "description": "Inspectez les emails et messages douteux en 1 clic directement dans votre navigateur.",
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Vérifier avec Dalil Enterprise"
+  },
+  "permissions": [
+    "activeTab",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://dalil.laradjane.workers.dev/*"
+  ]
+}
